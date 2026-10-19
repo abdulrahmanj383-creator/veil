@@ -121,6 +121,8 @@ export function getPolicyMetadata(
 export type SppPool = {
   /** `poolContractId` — the pool's own contract. */
   id: string
+  /** Ledger at which this pool was deployed. */
+  deploymentLedger: number
   /** `tokenContractId` — the token contract the pool moves. */
   tokenContractId: string
   /** `policyFlags` — the compliance policy the pool was deployed with. */
@@ -133,6 +135,10 @@ export type SppPool = {
 
 /** The SPP deployment the wallet should talk to on one network, if any. */
 export type SppNetworkConfig = {
+  /** Stellar account that deployed the SPP contracts. */
+  deployer: string
+  /** Stellar account that administers the SPP contracts. */
+  admin: string
   /** `asp_membership` — ASP contract holding the approved-key Merkle tree. */
   aspMembership: string
   /** `asp_non_membership` — ASP contract holding the blocked-key tree. */
@@ -152,13 +158,34 @@ export type SppNetworkConfig = {
   pools: readonly SppPool[]
 }
 
+const NETHERMIND_TESTNET_BOOTNODE = 'https://bootnode.dev-nethermind.xyz'
+
+/**
+ * Veil's own bootnode, or null when unset. This is the probe *primary*:
+ * `resolveBootnodeWithFallback(null)` skips the probe instead of
+ * health-checking Nethermind's archive and "falling back" to itself.
+ */
+export function getConfiguredBootnodeUrl(): string | null {
+  return process.env.NEXT_PUBLIC_SPP_BOOTNODE_URL?.trim() || null
+}
+
+/** Select Veil's archive when configured, otherwise use Nethermind's archive. */
+export function getSppBootnodeUrl(configuredUrl?: string): string {
+  return configuredUrl?.trim() || NETHERMIND_TESTNET_BOOTNODE
+}
+
 /**
  * SPP contract addresses, copied from SPP's
  * `deployments/testnet/deployments.json` at upstream commit
- * `91ba67d659cb50a66ecba7ba42e27f8e686117f4`
- * (NethermindEth/stellar-private-payments, 2026-09-23 — "redeploy testnet for
- * the packed storage layout"). Copy the testnet entry again — and bump the
- * commit hash above with it — whenever SPP redeploys.
+ * `05e4aac255ea01c47e16a62656502409ae092e0f`
+ * (NethermindEth/stellar-private-payments, 2026-10-05 — "Fix/smt depth").
+ * Copy the testnet entry again — and bump the commit hash above with it —
+ * whenever SPP redeploys.
+ *
+ * Every address here changes on an SPP redeploy, and that happens often: this
+ * is the third testnet redeploy since August. The sparse Merkle tree depth
+ * changed in this one, which invalidates every note in the old pools, so there
+ * is nothing to migrate and no reason to keep the previous ids around.
  *
  * Mainnet has no entry on purpose: SPP is not approved for mainnet, so there is
  * nothing to point at, and {@link getSppConfig} returning `null` there is how a
@@ -166,25 +193,31 @@ export type SppNetworkConfig = {
  */
 export const SPP_NETWORKS: Partial<Record<VeilNetworkName, SppNetworkConfig>> = {
   testnet: {
-    aspMembership: 'CAUPZISOB4GWTH22MVKA6MRWJMQRTLUMIGUSBFNJEF32Z6WEY3RFOKGC',
-    aspNonMembership: 'CAFLZKGO3KYKNOBPCVT3APFEWMUBRDBF4EVYK65E6O653WYMX4XH4QYJ',
+    // Upstream now publishes one account as both deployer and admin.
+    deployer: 'GDF4BXPQY5N4BEO24UIHM4NVB62MW7HDWH7SVHKLVZAMLP5IIHCFQORC',
+    admin: 'GDF4BXPQY5N4BEO24UIHM4NVB62MW7HDWH7SVHKLVZAMLP5IIHCFQORC',
+    aspMembership: 'CD6C62JOIT42MS3CDUA7N7BHAX226YYXINCPPG4VRNPZNICD34ZEF5HF',
+    aspNonMembership: 'CBQGRDUMVKUFYFPNLH6R6EPA64CMBJ62DAID3KFA6G2CNAP4LHPM3AS4',
     verifiers: {
-      standard: 'CD34JHLNB7AYASRLOTMT6EECBKFMOS356PPP5RPXRO5Y5EA5Y4DIXGTV',
-      traceable: 'CDBA2ZZSVV5VVE4OL2ORCSG2XDN4CD2UPTZIEO7BI32RKRTPFCUF2FMV',
+      // Upstream calls these `B` and `B_gvk_T`.
+      standard: 'CBJS5YH3FHDQQJ27EROPKLCNMSSZSFCZEW5LQJT7PGPED2BMYAOXZMRN',
+      traceable: 'CA77PIL6DJVJ7PWWE2CXDTYWXYLCDWUZIPZL4GEUUTNBWMTTPQBBCN66',
     },
-    publicKeyRegistry: 'CC6EJCBEULJGHNQQROKLXD6M6IKFW6LN7IHTVUEFQQWZDDLCMNPWXIH4',
-    bootnodeUrl: 'https://bootnode.dev-nethermind.xyz',
+    publicKeyRegistry: 'CC3RJBXUTOIH2G4S7BGYVNXOMNTSWNP3I4WTAB4222AAMZY2RPOMTXCJ',
+    bootnodeUrl: getSppBootnodeUrl(process.env.NEXT_PUBLIC_SPP_BOOTNODE_URL),
     pools: [
       {
         // XLM pool with a block-list policy.
-        id: 'CBEDPYMAEPQ6JR7WKWXRM6CFHHJLKA5RHPRRLSD4UZXZRGNMBXOT2GOT',
+        id: 'CAQU3P567OPD5ZXAHH7USYS6KQ7HOVT2HPBLD5Y4QOMGOBKE5BXMTOY7',
+        deploymentLedger: 4969408,
         tokenContractId: 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC',
         policyFlags: ['blocklist'],
         assetKind: 'native',
       },
       {
         // XLM pool with a block-list policy and a global view key (traceable).
-        id: 'CADS665GRBHOMPE7GY5XYTFT2J5JKRZN6ILYMJ5ZO62GU4YPL3PYIN42',
+        id: 'CCNDA54O5R5ZBJ2CWGUPIAVV4A65JJZYFHSWWPTHUXXNAIKRDGIDE4JV',
+        deploymentLedger: 4969409,
         tokenContractId: 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC',
         policyFlags: ['blocklist'],
         assetKind: 'native',
